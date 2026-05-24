@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getApplicationStagesForTenant } from "@/lib/application-stages";
 import { getCurrentUserTenant } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -8,32 +9,42 @@ export default async function AdminDashboard() {
   const me = (await getCurrentUserTenant())!;
   const supabase = createSupabaseServerClient();
 
-  const [
-    { count: totalJobs },
-    { count: publishedJobs },
-    { count: applicationsCount },
-  ] = await Promise.all([
-    supabase
-      .from("jobs")
-      .select("*", { count: "exact", head: true })
-      .eq("tenant_id", me.tenantId),
-    supabase
-      .from("jobs")
-      .select("*", { count: "exact", head: true })
-      .eq("tenant_id", me.tenantId)
-      .eq("status", "published"),
-    supabase
-      .from("applications")
-      .select("*", { count: "exact", head: true })
-      .eq("tenant_id", me.tenantId),
-  ]);
+  const [{ count: totalJobs }, { count: publishedJobs }, stages] =
+    await Promise.all([
+      supabase
+        .from("jobs")
+        .select("*", { count: "exact", head: true })
+        .eq("tenant_id", me.tenantId),
+      supabase
+        .from("jobs")
+        .select("*", { count: "exact", head: true })
+        .eq("tenant_id", me.tenantId)
+        .eq("status", "published"),
+      getApplicationStagesForTenant(supabase as any, me.tenantId),
+    ]);
 
-  const cards = [
+  const stageCounts: Record<string, number> = {};
+  await Promise.all(
+    stages.map(async (s) => {
+      const { count } = await supabase
+        .from("applications")
+        .select("*", { count: "exact", head: true })
+        .eq("tenant_id", me.tenantId)
+        .eq("stage", s.key);
+      stageCounts[s.key] = count ?? 0;
+    })
+  );
+  const totalApps = Object.values(stageCounts).reduce((a, b) => a + b, 0);
+  const inPipeline = stages
+    .filter((s) => !s.terminal)
+    .reduce((a, s) => a + (stageCounts[s.key] ?? 0), 0);
+
+  const topCards = [
     { label: "Total jobs", value: totalJobs ?? 0, href: "/admin/jobs" },
     { label: "Published", value: publishedJobs ?? 0, href: "/admin/jobs" },
     {
-      label: "Applications",
-      value: applicationsCount ?? 0,
+      label: "In pipeline",
+      value: inPipeline,
       href: "/admin/applications",
     },
   ];
@@ -56,7 +67,7 @@ export default async function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {cards.map((c) => (
+        {topCards.map((c) => (
           <Link
             key={c.label}
             href={c.href}
@@ -69,6 +80,53 @@ export default async function AdminDashboard() {
           </Link>
         ))}
       </div>
+
+      <section className="bg-white border border-gray-4 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-semibold text-dark-1">
+              Application pipeline
+            </h3>
+            <p className="text-xs text-gray-1 mt-1">
+              {totalApps} total submissions
+            </p>
+          </div>
+          <Link
+            href="/admin/applications/stages"
+            className="text-xs text-primary font-semibold hover:underline"
+          >
+            Manage stages →
+          </Link>
+        </div>
+        <div
+          className="grid gap-3"
+          style={{
+            gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))`,
+          }}
+        >
+          {stages.map((s) => (
+            <Link
+              key={s.key}
+              href={`/admin/applications?stage=${s.key}`}
+              className="rounded-lg p-4 border transition-all hover:-translate-y-0.5 hover:shadow-card flex flex-col gap-1"
+              style={{
+                borderColor: `${s.color}33`,
+                backgroundColor: `${s.color}0d`,
+              }}
+            >
+              <span
+                className="text-xs uppercase tracking-wider font-semibold"
+                style={{ color: s.color }}
+              >
+                {s.label}
+              </span>
+              <span className="text-2xl font-bold text-dark-1">
+                {stageCounts[s.key] ?? 0}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </section>
 
       <div className="bg-white border border-gray-4 rounded-xl p-6">
         <h3 className="text-base font-semibold text-dark-1 mb-3">Quick start</h3>

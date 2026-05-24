@@ -126,5 +126,24 @@ export type Application = {
   candidatePhone: string | null;
   candidateEmail: string | null;
   cvUrl: string | null;
+  stage: string;
+  rating: number;
+  lastStageChangeAt: string;
+  createdAt: string;
+};
+
+export type ApplicationEventKind = "stage_change" | "rating" | "note" | "reject";
+
+export type ApplicationEvent = {
+  id: string;
+  tenantId: string;
+  applicationId: string;
+  kind: ApplicationEventKind;
+  fromStage: string | null;
+  toStage: string | null;
+  rating: number | null;
+  note: string | null;
+  rejectReason: string | null;
+  actorUserId: string | null;
   createdAt: string;
 };

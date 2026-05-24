@@ -13,11 +13,15 @@ export function ToastForm({
   children,
   className = "",
   encType,
+  id,
+  onSubmitted,
 }: {
   action: Action;
   children: React.ReactNode;
   className?: string;
   encType?: string;
+  id?: string;
+  onSubmitted?: (state: ActionState) => void;
 }) {
   const [state, dispatch] = useFormState(action, idleState);
   const toast = useToast();
@@ -35,10 +39,12 @@ export function ToastForm({
     } else if (state.ok) {
       router.refresh();
     }
-  }, [state, toast, router]);
+    onSubmitted?.(state);
+  }, [state, toast, router, onSubmitted]);
 
   return (
     <form
+      id={id}
       action={dispatch}
       className={className}
       encType={encType as React.FormHTMLAttributes<HTMLFormElement>["encType"]}
