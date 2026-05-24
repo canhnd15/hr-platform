@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUserTenant } from "@/lib/auth";
+import { errorState, okState, type ActionState } from "@/lib/action-state";
+import { formatSalary } from "@/lib/salary";
+import { slugify, uniqueJobSlug } from "@/lib/slug";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 async function ownerOnly() {
@@ -16,15 +19,14 @@ export async function setJobStatusAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!id || !["draft", "published", "archived"].includes(status)) {
-    redirect("/admin/jobs?error=Bad+input");
+    redirect("/admin/jobs");
   }
   const supabase = createSupabaseServerClient();
-  const { error } = await supabase
+  await supabase
     .from("jobs")
     .update({ status })
     .eq("id", id)
     .eq("tenant_id", me.tenantId);
-  if (error) redirect(`/admin/jobs?error=${encodeURIComponent(error.message)}`);
   revalidatePath("/admin/jobs");
   revalidatePath(`/u/${me.tenantSlug}`, "layout");
   redirect("/admin/jobs");
@@ -35,12 +37,11 @@ export async function deleteJobAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) redirect("/admin/jobs");
   const supabase = createSupabaseServerClient();
-  const { error } = await supabase
+  await supabase
     .from("jobs")
     .delete()
     .eq("id", id)
     .eq("tenant_id", me.tenantId);
-  if (error) redirect(`/admin/jobs?error=${encodeURIComponent(error.message)}`);
   revalidatePath("/admin/jobs");
   revalidatePath(`/u/${me.tenantSlug}`, "layout");
   redirect("/admin/jobs");
@@ -51,21 +52,27 @@ export async function duplicateJobAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) redirect("/admin/jobs");
   const supabase = createSupabaseServerClient();
-  const { data: source, error } = await supabase
+  const { data: source } = await supabase
     .from("jobs")
     .select("*")
     .eq("id", id)
     .eq("tenant_id", me.tenantId)
     .single();
-  if (error || !source) redirect("/admin/jobs?error=Job+not+found");
+  if (!source) redirect("/admin/jobs");
 
   const { id: _drop, created_at: _ts, ...rest } = source as any;
-  const { error: insErr } = await supabase.from("jobs").insert({
+  const copyTitle = `${rest.title} (copy)`;
+  const copySlug = await uniqueJobSlug(
+    supabase as any,
+    me.tenantId,
+    slugify(copyTitle)
+  );
+  await supabase.from("jobs").insert({
     ...rest,
-    title: `${rest.title} (copy)`,
+    title: copyTitle,
+    slug: copySlug,
     status: "draft",
   });
-  if (insErr) redirect(`/admin/jobs?error=${encodeURIComponent(insErr.message)}`);
   revalidatePath("/admin/jobs");
   redirect("/admin/jobs");
 }
@@ -104,17 +111,61 @@ export async function reorderJobAction(formData: FormData) {
   redirect("/admin/jobs");
 }
 
-export async function saveJobAction(formData: FormData) {
-  const me = await ownerOnly();
+export async function saveJobAction(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const me = await getCurrentUserTenant();
+  if (!me) return errorState("Not signed in");
+
   const supabase = createSupabaseServerClient();
 
   const id = String(formData.get("id") ?? "");
-  const payload = {
+
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) return errorState("Title is required");
+
+  const slugInput = slugify(String(formData.get("slug") ?? ""));
+  const slugBase = slugInput || slugify(title);
+  const finalSlug = await uniqueJobSlug(
+    supabase as any,
+    me.tenantId,
+    slugBase,
+    id && id !== "new" ? id : undefined
+  );
+
+  const salaryMinRaw = String(formData.get("salary_min") ?? "").trim();
+  const salaryMaxRaw = String(formData.get("salary_max") ?? "").trim();
+  const salaryCurrency = String(formData.get("salary_currency") ?? "USD") as
+    | "USD"
+    | "VND";
+  const salaryOverride = String(formData.get("salary_override") ?? "").trim();
+
+  const salaryMin = salaryMinRaw ? Number(salaryMinRaw.replace(/[^0-9.]/g, "")) : null;
+  const salaryMax = salaryMaxRaw ? Number(salaryMaxRaw.replace(/[^0-9.]/g, "")) : null;
+  if (salaryMin != null && Number.isNaN(salaryMin)) {
+    return errorState("Salary min must be a number");
+  }
+  if (salaryMax != null && Number.isNaN(salaryMax)) {
+    return errorState("Salary max must be a number");
+  }
+
+  const salaryDisplay =
+    salaryOverride.length > 0
+      ? salaryOverride
+      : formatSalary(salaryMin, salaryMax, salaryCurrency, "");
+
+  const payload: Record<string, unknown> = {
     tenant_id: me.tenantId,
-    title: String(formData.get("title") ?? "").trim(),
+    title,
+    slug: finalSlug,
     level: String(formData.get("level") ?? ""),
     type: String(formData.get("type") ?? "Full-Time"),
-    salary: String(formData.get("salary") ?? ""),
+    location_type: String(formData.get("location_type") ?? "Onsite"),
+    salary: salaryDisplay,
+    salary_min: salaryMin,
+    salary_max: salaryMax,
+    salary_currency: salaryMin != null || salaryMax != null ? salaryCurrency : null,
     company: String(formData.get("company") ?? ""),
     location: String(formData.get("location") ?? ""),
     description: String(formData.get("description") ?? ""),
@@ -125,9 +176,7 @@ export async function saveJobAction(formData: FormData) {
     status: String(formData.get("status") ?? "draft"),
   };
 
-  if (!payload.title) {
-    redirect(`/admin/jobs/${id || "new"}?error=Title+is+required`);
-  }
+  let savedId = id;
 
   if (id && id !== "new") {
     const { error } = await supabase
@@ -135,11 +184,8 @@ export async function saveJobAction(formData: FormData) {
       .update(payload)
       .eq("id", id)
       .eq("tenant_id", me.tenantId);
-    if (error) {
-      redirect(`/admin/jobs/${id}?error=${encodeURIComponent(error.message)}`);
-    }
+    if (error) return errorState(error.message);
   } else {
-    // Auto-place new jobs at the end if no explicit display_order.
     if (!payload.display_order) {
       const { data } = await supabase
         .from("jobs")
@@ -147,15 +193,18 @@ export async function saveJobAction(formData: FormData) {
         .eq("tenant_id", me.tenantId)
         .order("display_order", { ascending: false })
         .limit(1);
-      payload.display_order = (data?.[0]?.display_order ?? 0) + 1;
+      payload.display_order = ((data?.[0]?.display_order ?? 0) as number) + 1;
     }
-    const { error } = await supabase.from("jobs").insert(payload);
-    if (error) {
-      redirect(`/admin/jobs/new?error=${encodeURIComponent(error.message)}`);
-    }
+    const { data, error } = await supabase
+      .from("jobs")
+      .insert(payload)
+      .select("id")
+      .single();
+    if (error) return errorState(error.message);
+    savedId = (data?.id as string) ?? "";
   }
 
   revalidatePath("/admin/jobs");
   revalidatePath(`/u/${me.tenantSlug}`, "layout");
-  redirect("/admin/jobs?saved=1");
+  return okState("Job saved.", id && id !== "new" ? undefined : `/admin/jobs/${savedId}`);
 }

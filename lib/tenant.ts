@@ -42,7 +42,11 @@ type TenantRow = {
     nav_items: TenantConfig["nav"];
   } | null;
   tenant_pages:
-    | { page_key: "information" | "benefits"; visible: boolean; content: any }[]
+    | {
+        page_key: "information" | "benefits" | "about";
+        visible: boolean;
+        content: any;
+      }[]
     | null;
 };
 
@@ -81,6 +85,7 @@ export async function getTenantBySlug(
 
   const infoPage = pages.find((p) => p.page_key === "information");
   const benefitsPage = pages.find((p) => p.page_key === "benefits");
+  const aboutPage = pages.find((p) => p.page_key === "about");
 
   return {
     id: data.id,
@@ -130,6 +135,16 @@ export async function getTenantBySlug(
         visible: benefitsPage?.visible ?? true,
         groups: benefitsPage?.content?.groups ?? [],
       },
+      about: {
+        visible: aboutPage?.visible ?? true,
+        mode: aboutPage?.content?.mode ?? "template",
+        cvUrl: aboutPage?.content?.cvUrl ?? null,
+        cvFileName: aboutPage?.content?.cvFileName ?? null,
+        about: aboutPage?.content?.about ?? "",
+        skills: aboutPage?.content?.skills ?? [],
+        experiences: aboutPage?.content?.experiences ?? [],
+        education: aboutPage?.content?.education ?? [],
+      },
     },
   };
 }
@@ -137,10 +152,15 @@ export async function getTenantBySlug(
 type JobRow = {
   id: string;
   tenant_id: string;
+  slug: string;
   title: string;
   level: string;
   type: Job["type"];
+  location_type: Job["locationType"] | null;
   salary: string;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: Job["salaryCurrency"];
   company: string;
   location: string;
   description: string;
@@ -156,10 +176,15 @@ function mapJob(row: JobRow): Job {
   return {
     id: row.id,
     tenantId: row.tenant_id,
+    slug: row.slug ?? "",
     title: row.title,
     level: row.level,
     type: row.type,
+    locationType: row.location_type ?? "Onsite",
     salary: row.salary,
+    salaryMin: row.salary_min ?? null,
+    salaryMax: row.salary_max ?? null,
+    salaryCurrency: row.salary_currency ?? null,
     company: row.company,
     location: row.location,
     description: row.description,
@@ -208,6 +233,26 @@ export async function getJobByIdForTenant(
     .select("*")
     .eq("tenant_id", tenantId)
     .eq("id", jobId)
+    .single();
+  if (error || !data) return null;
+  return mapJob(data as JobRow);
+}
+
+export async function getJobBySlugForTenant(
+  tenantId: string,
+  slug: string
+): Promise<Job | null> {
+  if (!slug) return null;
+  if (!isSupabaseConfigured()) {
+    if (tenantId !== demoTenant.id) return null;
+    return demoJobs.find((j) => j.slug === slug) ?? null;
+  }
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .eq("slug", slug)
     .single();
   if (error || !data) return null;
   return mapJob(data as JobRow);

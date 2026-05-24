@@ -1,98 +1,18 @@
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { AdminCard, FlashBanner } from "@/components/admin/AdminCard";
+import { AdminCard } from "@/components/admin/AdminCard";
+import { CancelButton } from "@/components/admin/CancelButton";
+import { SubmitButton, ToastForm } from "@/components/admin/ToastForm";
 import {
   BenefitGroupsEditor,
   NavEditor,
   SectionsEditor,
 } from "@/components/admin/RepeaterEditors";
+import { savePagesAction } from "@/app/admin/pages/actions";
 import { getCurrentUserTenant } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-function safeJsonArray<T>(s: string, fallback: T[]): T[] {
-  try {
-    const parsed = JSON.parse(s);
-    return Array.isArray(parsed) ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-async function savePages(formData: FormData) {
-  "use server";
-  const me = await getCurrentUserTenant();
-  if (!me) redirect("/login");
-
-  const navItems = safeJsonArray<{
-    href: string;
-    label: string;
-    enabled: boolean;
-  }>(String(formData.get("nav_items") ?? "[]"), []).filter(
-    (n) => n.href && n.label
-  );
-
-  const informationSections = safeJsonArray<{
-    title: string;
-    body: string;
-  }>(String(formData.get("information_sections") ?? "[]"), []).filter(
-    (s) => s.title || s.body
-  );
-
-  const benefitGroups = safeJsonArray<{
-    title: string;
-    bullets: string[];
-  }>(String(formData.get("benefit_groups") ?? "[]"), []).filter(
-    (g) => g.title || g.bullets.length > 0
-  );
-
-  const informationVisible = formData.get("information_visible") === "on";
-  const benefitsVisible = formData.get("benefits_visible") === "on";
-
-  const supabase = createSupabaseServerClient();
-
-  const { error: uiErr } = await supabase
-    .from("tenant_ui_config")
-    .update({ nav_items: navItems })
-    .eq("tenant_id", me.tenantId);
-  if (uiErr) {
-    redirect(`/admin/pages?error=${encodeURIComponent(uiErr.message)}`);
-  }
-
-  const { error: infoErr } = await supabase
-    .from("tenant_pages")
-    .upsert({
-      tenant_id: me.tenantId,
-      page_key: "information",
-      content: { sections: informationSections },
-      visible: informationVisible,
-    });
-  if (infoErr) {
-    redirect(`/admin/pages?error=${encodeURIComponent(infoErr.message)}`);
-  }
-
-  const { error: benErr } = await supabase
-    .from("tenant_pages")
-    .upsert({
-      tenant_id: me.tenantId,
-      page_key: "benefits",
-      content: { groups: benefitGroups },
-      visible: benefitsVisible,
-    });
-  if (benErr) {
-    redirect(`/admin/pages?error=${encodeURIComponent(benErr.message)}`);
-  }
-
-  revalidatePath(`/u/${me.tenantSlug}`, "layout");
-  redirect("/admin/pages?saved=1");
-}
-
-export default async function PagesAdminPage({
-  searchParams,
-}: {
-  searchParams: { saved?: string; error?: string };
-}) {
+export default async function PagesAdminPage() {
   const me = (await getCurrentUserTenant())!;
   const supabase = createSupabaseServerClient();
 
@@ -112,14 +32,7 @@ export default async function PagesAdminPage({
   const ben = pages?.find((p) => p.page_key === "benefits");
 
   return (
-    <form action={savePages} className="flex flex-col gap-6 max-w-3xl">
-      <FlashBanner
-        message={
-          searchParams.saved ? "Pages saved." : searchParams.error || undefined
-        }
-        kind={searchParams.error ? "error" : "success"}
-      />
-
+    <ToastForm action={savePagesAction} className="flex flex-col gap-6 w-full">
       <AdminCard
         title="Navigation"
         description="The links shown in the header. Path is relative to /u/<slug>. Use '/' for the home link."
@@ -132,7 +45,7 @@ export default async function PagesAdminPage({
 
       <AdminCard
         title="Information page"
-        description="Content shown at /u/<slug>/information. Add or remove sections freely."
+        description="Content shown at /u/<slug>/information. Section bodies support markdown."
         footer={
           <label className="flex items-center gap-2 text-sm text-dark-1 mr-auto">
             <input
@@ -153,7 +66,7 @@ export default async function PagesAdminPage({
 
       <AdminCard
         title="Benefits page"
-        description="Content shown at /u/<slug>/benefits. Each group becomes a header + bullet list."
+        description="Content shown at /u/<slug>/benefits. Each group has a title and bullets (one per line, markdown OK)."
         footer={
           <label className="flex items-center gap-2 text-sm text-dark-1 mr-auto">
             <input
@@ -172,14 +85,12 @@ export default async function PagesAdminPage({
         />
       </AdminCard>
 
-      <div className="flex justify-end">
-        <button
-          type="submit"
-          className="bg-primary text-white rounded-full px-6 h-11 font-semibold shadow-btn-primary hover:bg-primary-hover transition-colors"
-        >
+      <div className="flex justify-end gap-3">
+        <CancelButton />
+        <SubmitButton className="bg-primary text-white rounded-full px-6 h-11 font-semibold shadow-btn-primary hover:bg-primary-hover transition-colors">
           Save pages
-        </button>
+        </SubmitButton>
       </div>
-    </form>
+    </ToastForm>
   );
 }

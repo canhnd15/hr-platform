@@ -2,6 +2,8 @@ export type ThemePreset = "kim" | "moc" | "thuy" | "hoa" | "tho" | "custom";
 
 export type JobStatus = "draft" | "published" | "archived";
 export type JobType = "Full-Time" | "Part-Time" | "Internship";
+export type LocationType = "Onsite" | "Hybrid" | "Remote";
+export type Currency = "USD" | "VND";
 
 export type NavItem = { href: string; label: string; enabled: boolean };
 
@@ -10,6 +12,25 @@ export type CategoryOption = { value: string; label: string; keyword: string };
 
 export type InfoSection = { title: string; body: string };
 export type BenefitGroup = { title: string; bullets: string[] };
+
+export type AboutMode = "cv_upload" | "template";
+export type Experience = {
+  title: string;
+  company: string;
+  period: string;
+  description: string;
+};
+export type Education = { school: string; degree: string; period: string };
+export type AboutPage = {
+  visible: boolean;
+  mode: AboutMode;
+  cvUrl: string | null;
+  cvFileName: string | null;
+  about: string;
+  skills: string[];
+  experiences: Experience[];
+  education: Education[];
+};
 
 export type Socials = {
   facebook?: string;
@@ -66,16 +87,22 @@ export type TenantConfig = {
   pages: {
     information: { visible: boolean; sections: InfoSection[] };
     benefits: { visible: boolean; groups: BenefitGroup[] };
+    about: AboutPage;
   };
 };
 
 export type Job = {
   id: string;
   tenantId: string;
+  slug: string;
   title: string;
   level: string;
   type: JobType;
+  locationType: LocationType;
   salary: string;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryCurrency: Currency | null;
   company: string;
   location: string;
   description: string;

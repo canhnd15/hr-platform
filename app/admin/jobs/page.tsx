@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { FlashBanner } from "@/components/admin/AdminCard";
 import {
   deleteJobAction,
   duplicateJobAction,
@@ -11,35 +10,44 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+const PAGE_SIZE = 10;
+
 const statusPill = (status: string) => {
-  if (status === "published")
-    return "bg-positive-light text-positive";
-  if (status === "draft")
-    return "bg-gray-4 text-dark-1";
+  if (status === "published") return "bg-positive-light text-positive";
+  if (status === "draft") return "bg-gray-4 text-dark-1";
   return "bg-[#fce9e9] text-[#d70000]";
 };
 
 export default async function JobsAdminPage({
   searchParams,
 }: {
-  searchParams: { saved?: string; error?: string };
+  searchParams: { page?: string };
 }) {
   const me = (await getCurrentUserTenant())!;
   const supabase = createSupabaseServerClient();
 
-  const { data: jobs } = await supabase
+  const page = Math.max(1, Number(searchParams.page ?? 1) || 1);
+  const from = (page - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+
+  const { data: jobs, count } = await supabase
     .from("jobs")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("tenant_id", me.tenantId)
-    .order("display_order", { ascending: true });
+    .order("display_order", { ascending: true })
+    .range(from, to);
+
+  const total = count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const clampedPage = Math.min(page, totalPages);
 
   return (
-    <div className="flex flex-col gap-4 max-w-5xl">
+    <div className="flex flex-col gap-4 w-full">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-dark-1">Jobs</h2>
           <p className="text-sm text-gray-1 mt-1">
-            Published jobs appear on{" "}
+            {total} total · published jobs appear on{" "}
             <Link
               href={`/u/${me.tenantSlug}`}
               target="_blank"
@@ -58,13 +66,6 @@ export default async function JobsAdminPage({
         </Link>
       </div>
 
-      <FlashBanner
-        message={
-          searchParams.saved ? "Job saved." : searchParams.error || undefined
-        }
-        kind={searchParams.error ? "error" : "success"}
-      />
-
       <div className="bg-white border border-gray-4 rounded-xl overflow-hidden">
         {jobs && jobs.length > 0 ? (
           <table className="w-full text-sm">
@@ -73,12 +74,13 @@ export default async function JobsAdminPage({
                 <th className="text-left px-4 py-3">Title</th>
                 <th className="text-left px-4 py-3">Level</th>
                 <th className="text-left px-4 py-3">Type</th>
+                <th className="text-left px-4 py-3">Mode</th>
                 <th className="text-left px-4 py-3">Status</th>
                 <th className="text-right px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {jobs.map((j, i) => (
+              {jobs.map((j: any, i: number) => (
                 <tr
                   key={j.id}
                   className={`border-t border-gray-4 ${
@@ -100,6 +102,9 @@ export default async function JobsAdminPage({
                   </td>
                   <td className="px-4 py-3 text-dark-1">{j.level}</td>
                   <td className="px-4 py-3 text-dark-1">{j.type}</td>
+                  <td className="px-4 py-3 text-dark-1">
+                    {j.location_type ?? "—"}
+                  </td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${statusPill(
@@ -193,6 +198,85 @@ export default async function JobsAdminPage({
           </div>
         )}
       </div>
+
+      {totalPages > 1 && (
+        <Pagination page={clampedPage} totalPages={totalPages} />
+      )}
     </div>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+}: {
+  page: number;
+  totalPages: number;
+}) {
+  const hrefFor = (n: number) => `?page=${n}`;
+  const prev = page > 1 ? hrefFor(page - 1) : null;
+  const next = page < totalPages ? hrefFor(page + 1) : null;
+
+  const windowSize = 5;
+  let start = Math.max(1, page - Math.floor(windowSize / 2));
+  let end = Math.min(totalPages, start + windowSize - 1);
+  start = Math.max(1, Math.min(start, end - windowSize + 1));
+
+  const numbers: number[] = [];
+  for (let i = start; i <= end; i++) numbers.push(i);
+
+  const base =
+    "inline-flex items-center justify-center min-w-9 h-9 px-3 rounded-md text-sm font-medium border";
+  const active =
+    "border-primary bg-primary text-white";
+  const inactive =
+    "border-gray-4 text-dark-1 hover:bg-gray-5";
+  const disabled = "border-gray-4 text-gray-2 cursor-not-allowed";
+
+  return (
+    <nav className="flex items-center gap-2 justify-end" aria-label="Pagination">
+      <Link
+        href={prev ?? "#"}
+        className={`${base} ${prev ? inactive : disabled}`}
+        aria-disabled={!prev}
+      >
+        ← Prev
+      </Link>
+      {start > 1 && (
+        <>
+          <Link href={hrefFor(1)} className={`${base} ${inactive}`}>
+            1
+          </Link>
+          {start > 2 && <span className="text-gray-2 px-1">…</span>}
+        </>
+      )}
+      {numbers.map((n) => (
+        <Link
+          key={n}
+          href={hrefFor(n)}
+          className={`${base} ${n === page ? active : inactive}`}
+          aria-current={n === page ? "page" : undefined}
+        >
+          {n}
+        </Link>
+      ))}
+      {end < totalPages && (
+        <>
+          {end < totalPages - 1 && (
+            <span className="text-gray-2 px-1">…</span>
+          )}
+          <Link href={hrefFor(totalPages)} className={`${base} ${inactive}`}>
+            {totalPages}
+          </Link>
+        </>
+      )}
+      <Link
+        href={next ?? "#"}
+        className={`${base} ${next ? inactive : disabled}`}
+        aria-disabled={!next}
+      >
+        Next →
+      </Link>
+    </nav>
   );
 }

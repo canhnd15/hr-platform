@@ -1,107 +1,20 @@
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import {
   AdminCard,
   Field,
-  FlashBanner,
   inputCls,
   textareaCls,
 } from "@/components/admin/AdminCard";
+import {
+  SubmitButton,
+  ToastForm,
+} from "@/components/admin/ToastForm";
+import { saveProfileAction } from "@/app/admin/profile/actions";
 import { getCurrentUserTenant } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-async function uploadAvatar(
-  file: File,
-  tenantId: string,
-  supabase: ReturnType<typeof createSupabaseServerClient>
-): Promise<string | null> {
-  if (!file || file.size === 0) return null;
-  const ext = (file.name.split(".").pop() || "png").toLowerCase();
-  const path = `${tenantId}/avatar-${Date.now()}.${ext}`;
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const { error } = await supabase.storage
-    .from("avatars")
-    .upload(path, bytes, {
-      contentType: file.type || "image/png",
-      upsert: true,
-    });
-  if (error) throw new Error(`Avatar upload failed: ${error.message}`);
-  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
-  return data.publicUrl;
-}
-
-async function saveProfile(formData: FormData) {
-  "use server";
-  const me = await getCurrentUserTenant();
-  if (!me) redirect("/login");
-
-  const supabase = createSupabaseServerClient();
-
-  const avatarFile = formData.get("avatar") as File | null;
-  let avatarUrl: string | null = null;
-  try {
-    if (avatarFile && avatarFile.size > 0) {
-      avatarUrl = await uploadAvatar(avatarFile, me.tenantId, supabase);
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Avatar upload failed";
-    redirect(`/admin/profile?error=${encodeURIComponent(msg)}`);
-  }
-
-  const profileUpdate: Record<string, unknown> = {
-    full_name: String(formData.get("full_name") ?? ""),
-    email: String(formData.get("email") ?? ""),
-    title: String(formData.get("title") ?? ""),
-    years_experience: Number(formData.get("years_experience") ?? 0) || 0,
-    specialty: String(formData.get("specialty") ?? ""),
-    tagline: String(formData.get("tagline") ?? ""),
-    cta_url: String(formData.get("cta_url") ?? ""),
-    socials: {
-      facebook: String(formData.get("social_facebook") ?? "") || undefined,
-      telegram: String(formData.get("social_telegram") ?? "") || undefined,
-      whatsapp: String(formData.get("social_whatsapp") ?? "") || undefined,
-      linkedin: String(formData.get("social_linkedin") ?? "") || undefined,
-    },
-  };
-  if (avatarUrl) profileUpdate.avatar_url = avatarUrl;
-
-  const { error: profileErr } = await supabase
-    .from("tenant_profile")
-    .update(profileUpdate)
-    .eq("tenant_id", me.tenantId);
-  if (profileErr) {
-    redirect(`/admin/profile?error=${encodeURIComponent(profileErr.message)}`);
-  }
-
-  const { error: companyErr } = await supabase
-    .from("tenant_company")
-    .update({
-      name: String(formData.get("company_name") ?? ""),
-      full_name: String(formData.get("company_full_name") ?? ""),
-      size_range: String(formData.get("company_size_range") ?? ""),
-      headquarter: String(formData.get("company_headquarter") ?? ""),
-      representative_offices: String(
-        formData.get("company_representative_offices") ?? ""
-      ),
-      main_clients: String(formData.get("company_main_clients") ?? ""),
-      description: String(formData.get("company_description") ?? ""),
-    })
-    .eq("tenant_id", me.tenantId);
-  if (companyErr) {
-    redirect(`/admin/profile?error=${encodeURIComponent(companyErr.message)}`);
-  }
-
-  revalidatePath(`/u/${me.tenantSlug}`, "layout");
-  redirect(`/admin/profile?saved=1`);
-}
-
-export default async function ProfileAdminPage({
-  searchParams,
-}: {
-  searchParams: { saved?: string; error?: string };
-}) {
+export default async function ProfileAdminPage() {
   const me = (await getCurrentUserTenant())!;
   const supabase = createSupabaseServerClient();
 
@@ -121,31 +34,14 @@ export default async function ProfileAdminPage({
   const socials = (profile?.socials ?? {}) as Record<string, string | undefined>;
 
   return (
-    <form
-      action={saveProfile}
+    <ToastForm
+      action={saveProfileAction}
       encType="multipart/form-data"
-      className="flex flex-col gap-6 max-w-3xl"
+      className="flex flex-col gap-6 w-full"
     >
-      <FlashBanner
-        message={
-          searchParams.saved
-            ? "Profile saved."
-            : searchParams.error || undefined
-        }
-        kind={searchParams.error ? "error" : "success"}
-      />
-
       <AdminCard
         title="Personal info"
         description="Shown in the hero block of your public site."
-        footer={
-          <button
-            type="submit"
-            className="bg-primary text-white rounded-full px-5 h-10 font-semibold shadow-btn-primary hover:bg-primary-hover transition-colors"
-          >
-            Save all
-          </button>
-        }
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Full name">
@@ -342,13 +238,10 @@ export default async function ProfileAdminPage({
       </AdminCard>
 
       <div className="flex justify-end">
-        <button
-          type="submit"
-          className="bg-primary text-white rounded-full px-6 h-11 font-semibold shadow-btn-primary hover:bg-primary-hover transition-colors"
-        >
+        <SubmitButton className="bg-primary text-white rounded-full px-6 h-11 font-semibold shadow-btn-primary hover:bg-primary-hover transition-colors">
           Save changes
-        </button>
+        </SubmitButton>
       </div>
-    </form>
+    </ToastForm>
   );
 }

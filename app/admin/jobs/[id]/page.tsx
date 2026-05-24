@@ -3,22 +3,33 @@ import { notFound, redirect } from "next/navigation";
 import {
   AdminCard,
   Field,
-  FlashBanner,
   inputCls,
-  textareaCls,
 } from "@/components/admin/AdminCard";
+import { CancelButton } from "@/components/admin/CancelButton";
+import { MarkdownInput } from "@/components/admin/MarkdownInput";
+import { SlugInput } from "@/components/admin/SlugInput";
+import { SubmitButton, ToastForm } from "@/components/admin/ToastForm";
 import { saveJobAction } from "@/app/admin/jobs/actions";
 import { getCurrentUserTenant } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+const COMMON_LEVELS = [
+  "Intern",
+  "Fresher",
+  "Junior",
+  "Middle",
+  "Senior",
+  "Leader",
+  "Manager",
+  "Director",
+];
+
 export default async function JobEditPage({
   params,
-  searchParams,
 }: {
   params: { id: string };
-  searchParams: { error?: string };
 }) {
   const me = await getCurrentUserTenant();
   if (!me) redirect("/login");
@@ -38,7 +49,7 @@ export default async function JobEditPage({
   }
 
   return (
-    <form action={saveJobAction} className="flex flex-col gap-6 max-w-3xl">
+    <ToastForm action={saveJobAction} className="flex flex-col gap-6 w-full">
       <div className="flex items-center gap-3">
         <Link
           href="/admin/jobs"
@@ -48,14 +59,13 @@ export default async function JobEditPage({
         </Link>
       </div>
 
-      <FlashBanner message={searchParams.error} kind="error" />
-
       <input type="hidden" name="id" value={isNew ? "new" : params.id} />
 
       <AdminCard title={isNew ? "New job" : "Edit job"}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Title" className="sm:col-span-2">
             <input
+              id="job-title-input"
               name="title"
               defaultValue={job?.title ?? ""}
               className={inputCls}
@@ -63,15 +73,40 @@ export default async function JobEditPage({
               placeholder="Senior Backend Engineer"
             />
           </Field>
-          <Field label="Level">
+
+          <Field
+            label="URL slug"
+            hint="Auto-fills from the title — edit before saving for a custom URL. Changing the slug later breaks links to the old slug."
+            className="sm:col-span-2"
+          >
+            <SlugInput
+              name="slug"
+              defaultValue={job?.slug ?? ""}
+              titleInputId="job-title-input"
+              previewPrefix={`/u/${me.tenantSlug}/jobs/`}
+            />
+          </Field>
+
+          <Field
+            label="Level"
+            hint="Pick a common level or type your own."
+          >
             <input
               name="level"
               defaultValue={job?.level ?? ""}
               className={inputCls}
+              list="job-level-options"
               placeholder="Senior"
+              autoComplete="off"
             />
+            <datalist id="job-level-options">
+              {COMMON_LEVELS.map((l) => (
+                <option key={l} value={l} />
+              ))}
+            </datalist>
           </Field>
-          <Field label="Type">
+
+          <Field label="Employment type">
             <select
               name="type"
               defaultValue={job?.type ?? "Full-Time"}
@@ -82,14 +117,19 @@ export default async function JobEditPage({
               <option>Internship</option>
             </select>
           </Field>
-          <Field label="Salary">
-            <input
-              name="salary"
-              defaultValue={job?.salary ?? ""}
+
+          <Field label="Work mode">
+            <select
+              name="location_type"
+              defaultValue={job?.location_type ?? "Onsite"}
               className={inputCls}
-              placeholder="$2,500 - $4,000"
-            />
+            >
+              <option>Onsite</option>
+              <option>Hybrid</option>
+              <option>Remote</option>
+            </select>
           </Field>
+
           <Field label="Status">
             <select
               name="status"
@@ -101,6 +141,66 @@ export default async function JobEditPage({
               <option value="archived">Archived</option>
             </select>
           </Field>
+        </div>
+      </AdminCard>
+
+      <AdminCard
+        title="Salary"
+        description="Pick a currency and enter a numeric range. Or use the override for non-numeric values like 'Negotiable'."
+      >
+        <div className="grid grid-cols-[140px,1fr,1fr] gap-3 items-end">
+          <Field label="Currency">
+            <select
+              name="salary_currency"
+              defaultValue={job?.salary_currency ?? "USD"}
+              className={inputCls}
+            >
+              <option value="USD">USD ($)</option>
+              <option value="VND">VND (₫)</option>
+            </select>
+          </Field>
+          <Field label="Min">
+            <input
+              type="text"
+              inputMode="numeric"
+              name="salary_min"
+              defaultValue={job?.salary_min ?? ""}
+              className={inputCls}
+              placeholder="e.g. 2500 or 25000000"
+            />
+          </Field>
+          <Field label="Max">
+            <input
+              type="text"
+              inputMode="numeric"
+              name="salary_max"
+              defaultValue={job?.salary_max ?? ""}
+              className={inputCls}
+              placeholder="e.g. 4000 or 40000000"
+            />
+          </Field>
+          <Field
+            label="Display override"
+            hint="If filled, this string is shown verbatim and replaces the range above. Use for 'Negotiable', 'Competitive', etc."
+            className="col-span-3"
+          >
+            <input
+              name="salary_override"
+              defaultValue={
+                job?.salary &&
+                (job?.salary_min != null || job?.salary_max != null)
+                  ? ""
+                  : (job?.salary ?? "")
+              }
+              className={inputCls}
+              placeholder="Negotiable"
+            />
+          </Field>
+        </div>
+      </AdminCard>
+
+      <AdminCard title="Where">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Company / department" className="sm:col-span-2">
             <input
               name="company"
@@ -144,48 +244,37 @@ export default async function JobEditPage({
 
       <AdminCard
         title="Description"
-        description="Paragraphs separated by a blank line."
+        description="Markdown supported — use headings, lists, links, code blocks."
       >
-        <textarea
+        <MarkdownInput
           name="description"
           defaultValue={job?.description ?? ""}
-          className={textareaCls}
-          rows={6}
+          placeholder="What's the role about?"
         />
       </AdminCard>
 
-      <AdminCard title="Requirements" description="One bullet per line.">
-        <textarea
+      <AdminCard title="Requirements" description="Use a markdown list for bullets.">
+        <MarkdownInput
           name="requirements"
           defaultValue={job?.requirements ?? ""}
-          className={textareaCls}
-          rows={6}
+          placeholder={"- 3+ years experience\n- Strong SQL\n- ..."}
         />
       </AdminCard>
 
-      <AdminCard title="Benefits" description="One bullet per line.">
-        <textarea
+      <AdminCard title="Benefits" description="Use a markdown list for bullets.">
+        <MarkdownInput
           name="benefits"
           defaultValue={job?.benefits ?? ""}
-          className={textareaCls}
-          rows={6}
+          placeholder={"- Health insurance\n- Annual trip\n- ..."}
         />
       </AdminCard>
 
       <div className="flex justify-end gap-3">
-        <Link
-          href="/admin/jobs"
-          className="border border-gray-3 text-dark-1 rounded-full px-5 h-11 font-semibold hover:bg-gray-5 transition-colors inline-flex items-center"
-        >
-          Cancel
-        </Link>
-        <button
-          type="submit"
-          className="bg-primary text-white rounded-full px-6 h-11 font-semibold shadow-btn-primary hover:bg-primary-hover transition-colors"
-        >
+        <CancelButton href="/admin/jobs" />
+        <SubmitButton className="bg-primary text-white rounded-full px-6 h-11 font-semibold shadow-btn-primary hover:bg-primary-hover transition-colors">
           {isNew ? "Create job" : "Save changes"}
-        </button>
+        </SubmitButton>
       </div>
-    </form>
+    </ToastForm>
   );
 }

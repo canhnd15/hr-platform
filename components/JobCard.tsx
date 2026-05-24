@@ -10,7 +10,11 @@ export function JobCard({ job, tenantSlug }: { job: Job; tenantSlug: string }) {
 
   return (
     <a
-      href={`/u/${tenantSlug}/job-detail?id=${job.id}`}
+      href={
+        job.slug
+          ? `/u/${tenantSlug}/jobs/${job.slug}`
+          : `/u/${tenantSlug}/job-detail?id=${job.id}`
+      }
       className="job-card text-current no-underline"
     >
       {job.isHot && (

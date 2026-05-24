@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { TenantProvider } from "@/components/TenantProvider";
 import { Header } from "@/components/Header";
+import { ToastProvider } from "@/components/ui/Toast";
 import { getTenantBySlug } from "@/lib/tenant";
 
 export default async function TenantLayout({
@@ -25,14 +26,16 @@ export default async function TenantLayout({
 
   return (
     <TenantProvider value={tenant}>
-      <div
-        data-theme={tenant.branding.themePreset}
-        style={customStyle}
-        className="career-screen"
-      >
-        <Header />
-        {children}
-      </div>
+      <ToastProvider>
+        <div
+          data-theme={tenant.branding.themePreset}
+          style={customStyle}
+          className="career-screen"
+        >
+          <Header />
+          {children}
+        </div>
+      </ToastProvider>
     </TenantProvider>
   );
 }

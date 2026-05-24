@@ -1,74 +1,15 @@
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import {
   AdminCard,
   Field,
-  FlashBanner,
   inputCls,
 } from "@/components/admin/AdminCard";
+import { SubmitButton, ToastForm } from "@/components/admin/ToastForm";
 import { ThemePresetPicker } from "@/components/admin/ThemePresetPicker";
+import { saveBrandingAction } from "@/app/admin/branding/actions";
 import { getCurrentUserTenant } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
-
-async function uploadLogo(
-  file: File,
-  tenantId: string,
-  supabase: ReturnType<typeof createSupabaseServerClient>
-): Promise<string | null> {
-  if (!file || file.size === 0) return null;
-  const ext = (file.name.split(".").pop() || "png").toLowerCase();
-  const path = `${tenantId}/logo-${Date.now()}.${ext}`;
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const { error } = await supabase.storage
-    .from("logos")
-    .upload(path, bytes, {
-      contentType: file.type || "image/png",
-      upsert: true,
-    });
-  if (error) throw new Error(`Logo upload failed: ${error.message}`);
-  const { data } = supabase.storage.from("logos").getPublicUrl(path);
-  return data.publicUrl;
-}
-
-async function saveBranding(formData: FormData) {
-  "use server";
-  const me = await getCurrentUserTenant();
-  if (!me) redirect("/login");
-
-  const supabase = createSupabaseServerClient();
-
-  let logoUrl: string | null = null;
-  try {
-    const file = formData.get("logo") as File | null;
-    if (file && file.size > 0) {
-      logoUrl = await uploadLogo(file, me.tenantId, supabase);
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Logo upload failed";
-    redirect(`/admin/branding?error=${encodeURIComponent(msg)}`);
-  }
-
-  const update: Record<string, unknown> = {
-    primary_color: String(formData.get("primary_color") ?? "#036ae5"),
-    theme_preset: String(formData.get("theme_preset") ?? "thuy"),
-    font_family: String(formData.get("font_family") ?? "Be Vietnam Pro"),
-  };
-  if (logoUrl) update.logo_url = logoUrl;
-  if (formData.get("clear_logo") === "1") update.logo_url = null;
-
-  const { error } = await supabase
-    .from("tenant_branding")
-    .update(update)
-    .eq("tenant_id", me.tenantId);
-  if (error) {
-    redirect(`/admin/branding?error=${encodeURIComponent(error.message)}`);
-  }
-
-  revalidatePath(`/u/${me.tenantSlug}`, "layout");
-  redirect("/admin/branding?saved=1");
-}
 
 const FONTS = [
   "Be Vietnam Pro",
@@ -78,11 +19,7 @@ const FONTS = [
   "DM Sans",
 ];
 
-export default async function BrandingAdminPage({
-  searchParams,
-}: {
-  searchParams: { saved?: string; error?: string };
-}) {
+export default async function BrandingAdminPage() {
   const me = (await getCurrentUserTenant())!;
   const supabase = createSupabaseServerClient();
 
@@ -93,20 +30,11 @@ export default async function BrandingAdminPage({
     .single();
 
   return (
-    <form
-      action={saveBranding}
+    <ToastForm
+      action={saveBrandingAction}
       encType="multipart/form-data"
-      className="flex flex-col gap-6 max-w-3xl"
+      className="flex flex-col gap-6 w-full"
     >
-      <FlashBanner
-        message={
-          searchParams.saved
-            ? "Branding saved."
-            : searchParams.error || undefined
-        }
-        kind={searchParams.error ? "error" : "success"}
-      />
-
       <AdminCard
         title="Logo"
         description="Replaces the default text logo in the header. Square or wide image, max ~500px."
@@ -188,13 +116,10 @@ export default async function BrandingAdminPage({
       </AdminCard>
 
       <div className="flex justify-end">
-        <button
-          type="submit"
-          className="bg-primary text-white rounded-full px-6 h-11 font-semibold shadow-btn-primary hover:bg-primary-hover transition-colors"
-        >
+        <SubmitButton className="bg-primary text-white rounded-full px-6 h-11 font-semibold shadow-btn-primary hover:bg-primary-hover transition-colors">
           Save branding
-        </button>
+        </SubmitButton>
       </div>
-    </form>
+    </ToastForm>
   );
 }

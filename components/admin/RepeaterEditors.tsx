@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MarkdownInput } from "@/components/admin/MarkdownInput";
 
 const inputCls =
   "border border-gray-3 rounded-md h-10 px-3 text-sm focus:border-primary focus:outline-none bg-white text-dark-1";
@@ -362,11 +363,11 @@ export function SectionsEditor({
             onChange={(e) => update(i, { title: e.target.value })}
             placeholder="Section title (optional)"
           />
-          <textarea
-            className="border border-gray-3 rounded-md px-3 py-2 text-sm focus:border-primary focus:outline-none bg-white text-dark-1 leading-relaxed min-h-[100px]"
+          <MarkdownInput
             value={it.body}
-            onChange={(e) => update(i, { body: e.target.value })}
-            placeholder="Section body"
+            onChange={(next) => update(i, { body: next })}
+            placeholder="Section body (markdown supported)"
+            minHeight={220}
           />
           <div className="flex gap-1 justify-end">
             <button
@@ -405,7 +406,7 @@ export function SectionsEditor({
 }
 
 /* ============================================================
-   Benefit groups ({title, bullets[]})
+   Benefit groups ({title, bullets[]}) — bullets stored as markdown lines
    ============================================================ */
 type Group = { title: string; bullets: string[] };
 export function BenefitGroupsEditor({
@@ -432,18 +433,18 @@ export function BenefitGroupsEditor({
             onChange={(e) => update(i, { title: e.target.value })}
             placeholder="🎯 Group title"
           />
-          <textarea
-            className="border border-gray-3 rounded-md px-3 py-2 text-sm focus:border-primary focus:outline-none bg-white text-dark-1 leading-relaxed min-h-[100px]"
+          <MarkdownInput
             value={g.bullets.join("\n")}
-            onChange={(e) =>
+            onChange={(next) =>
               update(i, {
-                bullets: e.target.value
+                bullets: next
                   .split("\n")
-                  .map((b) => b.trim())
+                  .map((b) => b.replace(/^\s*[-*]\s+/, "").trim())
                   .filter(Boolean),
               })
             }
-            placeholder="One bullet per line"
+            placeholder="One bullet per line (markdown supported)"
+            minHeight={200}
           />
           <div className="flex gap-1 justify-end">
             <button

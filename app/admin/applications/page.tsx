@@ -31,7 +31,7 @@ export default async function ApplicationsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4 max-w-5xl">
+    <div className="flex flex-col gap-4 w-full">
       <div>
         <h2 className="text-2xl font-bold text-dark-1">Applications</h2>
         <p className="text-sm text-gray-1 mt-1">

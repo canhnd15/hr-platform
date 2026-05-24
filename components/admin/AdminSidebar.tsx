@@ -7,6 +7,7 @@ import { signOutAction } from "@/app/admin/actions";
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: "▦" },
   { href: "/admin/profile", label: "Profile", icon: "👤" },
+  { href: "/admin/about", label: "About", icon: "📄" },
   { href: "/admin/branding", label: "Branding", icon: "🎨" },
   { href: "/admin/filters", label: "Filters", icon: "⚙" },
   { href: "/admin/pages", label: "Pages", icon: "📝" },

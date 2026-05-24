@@ -1,4 +1,5 @@
 import { Hero } from "@/components/Hero";
+import { Markdown } from "@/components/Markdown";
 import { getTenantBySlug } from "@/lib/tenant";
 import { notFound } from "next/navigation";
 
@@ -60,7 +61,7 @@ export default async function InformationPage({
                           <strong>{s.title}</strong>
                         </p>
                       )}
-                      <p>{s.body}</p>
+                      <Markdown source={s.body} />
                     </div>
                   ))
                 )}
